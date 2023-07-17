@@ -12,6 +12,7 @@ import "./common/SecuredTokenTransfer.sol";
 import "./common/StorageAccessible.sol";
 import "./interfaces/ISignatureValidator.sol";
 import "./external/SafeMath.sol";
+import "./ERC2771Context.sol";
 
 /**
  * @title Safe - A multisignature wallet with support for confirmations using signed messages based on EIP-712.
@@ -40,7 +41,8 @@ contract Safe is
     ISignatureValidatorConstants,
     FallbackManager,
     StorageAccessible,
-    GuardManager
+    GuardManager,
+    ERC2771Context
 {
     using SafeMath for uint256;
 
@@ -70,13 +72,14 @@ contract Safe is
     mapping(address => mapping(bytes32 => uint256)) public approvedHashes;
 
     // This constructor ensures that this contract can only be used as a singleton for Proxy contracts
-    constructor() {
+    constructor(address trustedForwarder) ERC2771Context(trustedForwarder) {
         /**
          * By setting the threshold it is not possible to call setup anymore,
          * so we create a Safe with 0 owners and threshold 1.
          * This is an unusable Safe, perfect for the singleton
          */
         threshold = 1;
+        require(trustedForwarder != address(0), "NoFWDR");
     }
 
     /**
@@ -113,7 +116,7 @@ contract Safe is
             // baseGas = 0, gasPrice = 1 and gas = payment => amount = (payment + 0) * 1 = payment
             handlePayment(payment, 0, 1, paymentToken, paymentReceiver);
         }
-        emit SafeSetup(msg.sender, _owners, _threshold, to, fallbackHandler);
+        emit SafeSetup(_msgSender(), _owners, _threshold, to, fallbackHandler);
     }
 
     /** @notice Executes a `operation` {0: Call, 1: DelegateCall}} transaction to `to` with `value` (Native Currency)
@@ -188,7 +191,7 @@ contract Safe is
                     refundReceiver,
                     // Signature info
                     signatures,
-                    msg.sender
+                    _msgSender()
                 );
             }
         }
@@ -318,7 +321,7 @@ contract Safe is
                 // When handling approved hashes the address of the approver is encoded into r
                 currentOwner = address(uint160(uint256(r)));
                 // Hashes are automatically approved by the sender of the message or when they have been pre-approved via a separate transaction
-                require(msg.sender == currentOwner || approvedHashes[currentOwner][dataHash] != 0, "GS025");
+                require(_msgSender() == currentOwner || approvedHashes[currentOwner][dataHash] != 0, "GS025");
             } else if (v > 30) {
                 // If v > 30 then default va (27,28) has been adjusted for eth_sign flow
                 // To support eth_sign and similar we adjust v and hash the messageHash with the Ethereum message prefix before applying ecrecover
@@ -340,9 +343,9 @@ contract Safe is
      * @param hashToApprove The hash to mark as approved for signatures that are verified by this contract.
      */
     function approveHash(bytes32 hashToApprove) external {
-        require(owners[msg.sender] != address(0), "GS030");
-        approvedHashes[msg.sender][hashToApprove] = 1;
-        emit ApproveHash(hashToApprove, msg.sender);
+        require(owners[_msgSender()] != address(0), "GS030");
+        approvedHashes[_msgSender()][hashToApprove] = 1;
+        emit ApproveHash(hashToApprove, _msgSender());
     }
 
     /**

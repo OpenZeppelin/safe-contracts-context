@@ -10,6 +10,8 @@ import "./Safe.sol";
  * @author Richard Meissner - @rmeissner
  */
 contract SafeL2 is Safe {
+    constructor(address trustedForwarder) Safe(trustedForwarder) {}
+
     event SafeMultiSigTransaction(
         address to,
         uint256 value,
